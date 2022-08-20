@@ -1,0 +1,15 @@
+1. Sign up / sign in :-
+	a. first mail verification 
+	b. jwt access
+2. update Password and forgot password
+3. update porfile 
+	a. basic data
+	b. profile picture
+	c. store in s3 bucket with public read aceess
+4. post a picture
+5. search users with username
+	a. This should be a get request with searchParam 	in the query. E.g., http://url?search=Qwe    this 	should return all users with usernames starting 	with “Qwe”
+6. follow other users
+7. Users should be able to see the posts of the users he    follows (not everyone) and like them (should not be    able to like a post more than once). Not more than 5    posts should be fetched per get request, so you need    to implement pagination too.
+supportupi@pnb.co.in
+
