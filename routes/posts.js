@@ -2,12 +2,12 @@ const router = require("express").Router();
 const Post = require("../models/Post");
 const User = require("../models/User");
 const multer = require("multer");
-// const { verifyToken } = require('./verifyToken');
 const path = require('path');
 const fs = require("fs");
 const AWS = require('aws-sdk');
 const dotenv = require("dotenv");
 const { v4: uuidv4 } = require("uuid");
+const { verifyToken } = require("./verifyToken");
 AWS.config.update({ region: 'ap-south-1' });
 dotenv.config();
 
@@ -58,7 +58,7 @@ router.post("/upload", upload.single('img'), async (req, res) => {
         const params = {
             Bucket: process.env.AWS_BUCKET_NAME,
             Key: `/${uuidv4()}.${fileType}`,
-            Body: file,
+            user: file,
             ACL: "public-read"
         }
 
@@ -68,8 +68,8 @@ router.post("/upload", upload.single('img'), async (req, res) => {
             } else {
 
                 const post = new Post({
-                    userId: req.body.userId,
-                    desc: req.body.desc,
+                    userId: req.user.userId,
+                    desc: req.user.desc,
                     img: data.Location
                 });
 
@@ -97,19 +97,26 @@ router.post("/upload", upload.single('img'), async (req, res) => {
 
 
 // // like a post and dislike
-router.put("/:id/like", async (req, res) => {
+router.put("/:id/like", verifyToken, async (req, res) => {
     console.log("request nade");
     try {
         const post = await Post.findById(req.params.id);
+        const user = await User.findById(req.user.userId);
         console.log(post.likes);
+        console.log(user);
+        console.log(post);
 
-        if(post.followers.includes(req.params.id))
-        if (!post.likes.includes(req.body.userId)) {
-            await post.updateOne({ $push: { likes: req.body.userId } });
-            res.status(200).json("the post has benn liked");
-        } else {
-            await post.updateOne({ $pull: { likes: req.body.userId } });
-            res.status(200).json("the post has been disliked");
+        if (user.followings.includes(post.userId)) {
+            if (!post.likes.includes(req.user.userId)) {
+                await post.updateOne({ $push: { likes: req.user.userId } });
+                res.status(200).json("the post has been liked");
+            } else {
+                await post.updateOne({ $pull: { likes: req.user.userId } });
+                res.status(200).json("the post has been disliked");
+            }
+        }
+        else {
+            throw "you do not follow this user";
         }
     } catch (err) {
         console.log("error occurred");
@@ -122,7 +129,7 @@ router.put("/:id/like", async (req, res) => {
 
 // // get liked post
 
-router.get("/allpost", async (req, res) => {
+router.get("/allpost", verifyToken, async (req, res) => {
 
 
     try {
@@ -131,7 +138,7 @@ router.get("/allpost", async (req, res) => {
         const postPerpage = 5;
 
         const all = await Post
-            .find({ likes: { $in: [ req.user.userId ] } })
+            .find({ likes: { $in: [req.user.userId] } })
             .sort({ createdAt: -1 })
             .skip(page * postPerpage)
             .limit(postPerpage);
