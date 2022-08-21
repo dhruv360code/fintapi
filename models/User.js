@@ -6,8 +6,34 @@ const UserSchema = new Schema({
 
     email: String,
     password: String,
-    dateOfBirth: Date,
-    verified: Boolean
+    dateOfBirth: String,
+    verified: Boolean,
+
+    followers: {
+        type: Array,
+        default: []
+    },
+
+    followings: {
+        type: Array,
+        default: []
+    },
+    profilePicture: {
+        type: String,
+        default: ""
+    },
+
+    desc: {
+        type: String,
+        default: "",
+        max: 50
+    },
+    city: {
+        type: String,
+        default: "",
+        max: 50
+    },
+
 });
 
 const User = mongoose.model('User', UserSchema);

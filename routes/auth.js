@@ -1,15 +1,48 @@
 const express = require('express');
 const router = express.Router();
 
-const User = require('./../models/User');
-const UserVerification = require("./../models/UserVerification");
+const User = require('../models/User');
+const UserVerification = require("../models/UserVerification");
 const PasswordReset = require("../models/PasswordReset");
 const bcrypt = require('bcrypt');
 const { response } = require('express');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require("uuid");
-
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
+
+const multer = require("multer");
+const path = require('path');
+const fs = require("fs");
+const AWS = require('aws-sdk');
+const dotenv = require("dotenv");
+AWS.config.update({ region: 'ap-south-1' });
+dotenv.config();
+
+
+
+
+
+const s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+});
+
+
+// define storage for the images
+let Ifile;
+
+var storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'routes/uploads')
+    },
+    filename: (req, file, cb) => {
+        Ifile = Date.now() + file.originalname;
+        cb(null, Ifile);
+    }
+});
+
+var upload = multer({ storage: storage });
 
 
 
@@ -31,6 +64,71 @@ transporter.verify((error, success) => {
         console.log(success);
     }
 })
+
+
+
+// update user
+
+
+router.put("/update", upload.single('img'), async (req, res) => {
+    // console.log(req);
+    try {
+
+
+        console.log(Ifile);
+
+        let myFile = Ifile.split(".");
+        const fileType = myFile[myFile.length - 1];
+        const file = fs.readFileSync(req.file.path, (err, data) => {
+            if (err) {
+                throw err;
+            }
+            console.log(data);
+        });
+
+        const params = {
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: `profile/${uuidv4()}.${fileType}`,
+            Body: file,
+            ACL: "public-read"
+        };
+
+        s3.upload(params, (error, data) => {
+            if (error) {
+                res.status(500).send(error);
+            } else {
+
+                const newUser = {
+
+                    profilePicture: data.Location,
+                    name: req.body.name,
+                    desc: req.body.desc,
+                    city: req.body.city,
+                    dateOfBirth: req.body.dateOfBirth.toString()
+                };
+
+                User.findByIdAndUpdate(req.body.userId, newUser).then(result => {
+                    console.log(result);
+                    res.status(200).json(result);
+                }).catch(err => {
+                    console.log(err);
+                    res.status(400).json(err);
+                })
+            }
+        })
+
+
+    } catch (err) {
+        console.log(err);
+        res.status(400).json({
+            status: "FAILED",
+            message: "not able to update the user",
+            err: err
+        });
+    }
+
+})
+
 
 // sign up
 
@@ -88,14 +186,15 @@ router.post('/signup', (req, res) => {
                             email,
                             password: hashedPassword,
                             dateOfBirth,
-                            verified: false
+                            verified: true
                         });
 
                         newUser.save().then(result => {
                             // handle account verification
                             console.log("user created");
 
-                            sendVerificationEmail(result, res);
+                            // sendVerificationEmail(result, res);
+                            res.status(200).json(result);
 
                         }).catch(err => {
                             res.json({
@@ -147,7 +246,7 @@ const sendVerificationEmail = ({ _id, email }, res) => {
         subject: "Verify you email",
         html: `<p>verify you email address to complete the sign up and login into your account.</p>
               <p> This link <b>expires in 6 hours</b>.</p>
-              <p>Press <a href=${currenturl + "/user/verify/" + _id + "/" + uniqueString}> this link </a> to proceed.</p>`
+              <p>Press <a href=${currenturl + "user/verify/" + _id + "/" + uniqueString}> this link </a> to proceed.</p>`
     };
 
     const saltround = 10;
@@ -238,17 +337,17 @@ router.get("/verify/:userId/:uniqueString", async (req, res) => {
                                 .deleteOne({ _id: userId })
                                 .then(() => {
                                     let message = "link has expired. please sign up again.";
-                                    res.redirect(`/user/verified/error=true&message=${message}`);
+                                    res.redirect(`user/verified/error=true&message=${message}`);
                                 })
                                 .catch(error => {
                                     let message = "Clearing user with expired unique string failed";
-                                    res.redirect(`/user/verified/error=true&message=${message}`);
+                                    res.redirect(`user/verified/error=true&message=${message}`);
                                 })
                         })
                         .catch((error) => {
                             console.log(error);
                             let message = " An error occurred while clearing expired user verification record";
-                            res.redirect(`/user/verified/error=true&message=${message}`);
+                            res.redirect(`user/verified/error=true&message=${message}`);
                         });
 
 
@@ -337,11 +436,26 @@ router.post('/signin', (req, res) => {
                         bcrypt.compare(password, hashedPassword).then(result => {
                             if (result) {
 
-                                res.json({
+                                const accessToken = jwt.sign({
+                                    userId: data[0]._id,
+                                    verified: data[0].verified,
+                                    name: data[0].name,
+                                    followers: data[0].followers,
+                                    followings: data[0].followings
+                                },
+                                    process.env.JWT_SEC,
+                                    { expiresIn: "1d" }
+                                );
+
+                                res.status(200).json({
                                     status: "SUCCESS",
                                     message: "Signin Successful",
-                                    data: data
-                                })
+                                    ...data[0],
+                                    accessToken,
+
+
+                                });
+
                             } else {
                                 console.log("1");
                                 res.json({
@@ -584,5 +698,7 @@ router.post("/resetPassword", (req, res) => {
             })
         })
 })
+
+
 
 module.exports = router;
